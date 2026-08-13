@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Lakzee 32</string>
+    <string name="title_activity_main">Lakzee 32</string>
+    <string name="package_name">com.lakzee32.app</string>
+    <string name="custom_url_scheme">com.lakzee32.app</string>
+</resources>

@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: lakzee-backend
+    env: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start:prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CLIENT_URL
+        value: "https://lakzee-fitness.vercel.app"
+      - key: DATABASE_URL
+        sync: false # You must set this manually in the Render Dashboard with your Supabase URL!

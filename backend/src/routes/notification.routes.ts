@@ -1,0 +1,189 @@
+import { Router } from 'express';
+import { prisma } from '../app';
+import { authenticate } from '../middlewares/auth.middleware';
+
+const router = Router();
+
+router.get('/', authenticate, async (req: any, res) => {
+  try {
+    const userRole = req.user.role;
+    const userId = req.user.id;
+
+    const notifications: any[] = [];
+    
+    // Calculate 3 days from now for expiry warnings
+    let now = new Date();
+    
+    // Adjust 'now' to match the user's local timezone if tzOffset is provided
+    if (req.query.tzOffset) {
+      const offset = parseInt(req.query.tzOffset as string, 10);
+      // Offset is in minutes (e.g., -330 for IST).
+      now = new Date(Date.now() - (offset * 60000));
+    }
+    
+    const threeDaysFromNow = new Date();
+    threeDaysFromNow.setDate(new Date().getDate() + 3);
+
+    if (userRole === 'ADMIN' || userRole === 'RECEPTIONIST') {
+      // ADMIN NOTIFICATIONS
+
+      // 1. Pending Payments
+      const pendingInvoices = await prisma.invoice.findMany({
+        where: { status: 'PENDING' },
+        include: { member: { include: { user: true } } },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      pendingInvoices.forEach(invoice => {
+        notifications.push({
+          id: `inv-${invoice.id}`,
+          type: 'PAYMENT',
+          title: 'Pending Payment',
+          message: `${invoice.member.user.firstName} ${invoice.member.user.lastName} has a pending invoice of ₹${invoice.totalAmount}.`,
+          date: invoice.createdAt,
+          link: `/admin/payments`,
+          read: false
+        });
+      });
+
+      // 2. Expiring / Expired Subscriptions
+      const expiringSubscriptions = await prisma.subscription.findMany({
+        where: {
+          endDate: { lte: threeDaysFromNow },
+          status: { notIn: ['CANCELLED', 'FROZEN'] } // ACTIVE or already EXPIRED
+        },
+        include: { member: { include: { user: true } }, plan: true },
+        orderBy: { endDate: 'asc' }
+      });
+
+      expiringSubscriptions.forEach(sub => {
+        const isExpired = sub.endDate < now;
+        notifications.push({
+          id: `sub-${sub.id}`,
+          type: 'EXPIRY',
+          title: isExpired ? 'Membership Expired' : 'Membership Expiring Soon',
+          message: `${sub.member.user.firstName} ${sub.member.user.lastName}'s ${sub.plan.name} plan ${isExpired ? 'expired on' : 'will expire on'} ${sub.endDate.toLocaleDateString()}.`,
+          date: sub.endDate,
+          link: `/admin/members/${sub.member.id}/plan`,
+          read: false
+        });
+      });
+
+      // 3. Member Birthdays (ONLY for Admins)
+      if (userRole === 'ADMIN') {
+        const membersWithBirthdays = await prisma.memberProfile.findMany({
+          where: { dob: { not: null } },
+          include: { user: true }
+        });
+        
+        const currentMonth = now.getUTCMonth();
+        const currentDay = now.getUTCDate();
+
+        membersWithBirthdays.forEach(member => {
+          if (!member.dob) return;
+          // Check if birthday matches today's exact date (ignoring year)
+          // We use getUTCMonth/Date because dates saved from frontend (e.g. YYYY-MM-DD) are often stored as UTC midnight
+          if (member.dob.getUTCMonth() === currentMonth && member.dob.getUTCDate() === currentDay) {
+            notifications.push({
+              id: `bday-${member.id}`,
+              type: 'SYSTEM',
+              title: 'Member Birthday Today! 🎉',
+              message: `It's ${member.user.firstName} ${member.user.lastName}'s birthday today! Don't forget to wish them.`,
+              date: now,
+              link: `/admin/members?viewMember=${member.userId}`,
+              read: false
+            });
+          }
+        });
+      }
+
+    } else if (userRole === 'MEMBER') {
+      // MEMBER NOTIFICATIONS
+      
+      const memberProfile = await prisma.memberProfile.findUnique({
+        where: { userId }
+      });
+
+      if (memberProfile) {
+        // 1. My Pending Payments
+        const myPendingInvoices = await prisma.invoice.findMany({
+          where: { memberId: memberProfile.id, status: 'PENDING' },
+          orderBy: { createdAt: 'desc' }
+        });
+
+        myPendingInvoices.forEach(invoice => {
+          notifications.push({
+            id: `inv-${invoice.id}`,
+            type: 'PAYMENT',
+            title: 'Pending Payment',
+            message: `You have a pending invoice of ₹${invoice.totalAmount}. Please complete your payment.`,
+            date: invoice.createdAt,
+            link: `/member/dashboard`, // Or somewhere specific for member payments if it existed
+            read: false
+          });
+        });
+
+        // 2. My Expiring Subscriptions
+        const myExpiringSubscriptions = await prisma.subscription.findMany({
+          where: {
+            memberId: memberProfile.id,
+            endDate: { lte: threeDaysFromNow },
+            status: { notIn: ['CANCELLED', 'FROZEN'] }
+          },
+          include: { plan: true },
+          orderBy: { endDate: 'asc' }
+        });
+
+        myExpiringSubscriptions.forEach(sub => {
+          const isExpired = sub.endDate < now;
+          notifications.push({
+            id: `sub-${sub.id}`,
+            type: 'EXPIRY',
+            title: isExpired ? 'Membership Expired' : 'Membership Expiring Soon',
+            message: `Your ${sub.plan.name} plan ${isExpired ? 'expired on' : 'will expire on'} ${sub.endDate.toLocaleDateString()}. Please renew it to continue accessing the gym.`,
+            date: sub.endDate,
+            link: `/member/subscriptions`,
+            read: false
+          });
+        });
+      }
+    }
+
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+
+    // Add Announcements for everyone
+    const recentAnnouncements = await prisma.announcement.findMany({
+      where: {
+        createdAt: { gte: todayStart }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    recentAnnouncements.forEach(announcement => {
+      notifications.push({
+        id: `ann-${announcement.id}`,
+        type: 'ANNOUNCEMENT',
+        title: announcement.title,
+        message: announcement.message,
+        date: announcement.createdAt,
+        link: userRole === 'MEMBER' ? '/member/dashboard' : '/admin/announcements',
+        read: false
+      });
+    });
+
+    // Sort all notifications by date (newest first for payments and announcements, and closest expiry first?)
+    // Actually, sorting by date descending is fine for payments, but for expiry, maybe we want most recent expiries first.
+    notifications.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    res.status(200).json({
+      status: 'success',
+      data: notifications
+    });
+  } catch (error) {
+    console.error('Error fetching notifications:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to fetch notifications' });
+  }
+});
+
+export default router;
