@@ -19,7 +19,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.x'
+
+      - name: Debug Node Version
+        run: |
+          node -v
+          npm -v
 
       - name: Install Dependencies
         working-directory: ./web
@@ -27,7 +32,9 @@ jobs:
 
       - name: Build Next.js & Sync Capacitor
         working-directory: ./web
-        run: npm run mobile:build
+        run: |
+          node -v
+          npm run mobile:build
 
       - name: Setup Java
         uses: actions/setup-java@v4
