@@ -147,7 +147,7 @@ export default function PlansPage() {
               
               <div className="pt-4 border-t border-border">
                 <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${plan.isActive ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
-                  {plan.isActive ? "Active Plan" : "Archived"}
+                  {plan.isActive ? "Active" : "Archived"}
                 </span>
               </div>
             </motion.div>

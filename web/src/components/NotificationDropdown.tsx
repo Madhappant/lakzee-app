@@ -105,7 +105,9 @@ export function NotificationDropdown({ role: _role }: { role: "ADMIN" | "MEMBER"
                 <div className="p-8 text-center text-muted-foreground flex flex-col items-center justify-center gap-2">
                   <CheckCircle2 className="w-10 h-10 text-green-500/50 mb-2" />
                   <p>You&apos;re all caught up!</p>
-                  <p className="text-xs">No pending payments or expiring members.</p>
+                  <p className="text-xs">
+                    {_role === "ADMIN" ? "No pending payments or expiring members." : "No new notifications."}
+                  </p>
                 </div>
               ) : (
                 <div className="divide-y divide-border">
